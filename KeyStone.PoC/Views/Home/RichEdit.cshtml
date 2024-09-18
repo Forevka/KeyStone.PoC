@@ -1,0 +1,45 @@
+﻿@using DevExpress.AspNetCore
+@{
+    ViewData["Title"] = "Rich Edit";
+}
+<h1>@ViewData["Title"]</h1>
+
+<script type="text/javascript">
+    function onCalculateDocumentVariable(s, e) {
+        console.log(s, e)
+        e.data.forEach((variableData) => {
+            console.log('start processing ' + variableData.variableName);
+
+            var variableName = variableData.variableName;
+            var args = variableData.arguments;
+            $.ajax({
+                type: "POST",
+                url: '/api/DocVar/CalculateDocumentVariable',
+                data: { variableName: variableName, arguments: args },
+                success: function (result) {
+                    //e.value = result;
+                    console.log(result)
+                    const d = s.createDocumentProcessor();
+                    d.importDocument(result/*is in base 64*/, DevExpress.RichEdit.DocumentFormat.Rtf, (importSuccess) => {
+                        console.log('success', importSuccess)
+                        console.log('result', result)
+
+                        if (importSuccess)
+                            variableData.callback(d);
+                    });
+                },
+                error: function () {
+                    e.handled = false;
+                }
+            });
+        });
+        
+    }
+</script>
+
+@(Html.DevExpress().RichEdit("DemoRichEdit")
+    .Height(900)
+    .ConfirmOnLosingChanges(c => c.Enabled(false))
+    .OnCalculateDocumentVariableAsync("onCalculateDocumentVariable")
+    .Open("Documents/WoodstockGA.docx")
+)
