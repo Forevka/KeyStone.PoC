@@ -1,8 +1,7 @@
-﻿using DevExpress.XtraRichEdit.API.Native;
-using DevExpress.XtraRichEdit;
+﻿using DevExpress.XtraRichEdit;
+using DevExpress.XtraRichEdit.API.Native;
 using Microsoft.AspNetCore.Mvc;
 using System.Drawing;
-using System.Linq;
 
 namespace KeyStone.PoC.Controllers;
 
@@ -10,65 +9,101 @@ namespace KeyStone.PoC.Controllers;
 [Route("api/[controller]")]
 public class DocVarController : ControllerBase
 {
-    [HttpPost("CalculateDocumentVariable")]
-    public IActionResult CalculateDocumentVariable([FromForm] string variableName, [FromForm] string? arguments)
+    private readonly IWebHostEnvironment _webHostEnvironment;
+
+    public DocVarController(IWebHostEnvironment webHostEnvironment)
     {
-        /*
-        // Create a new RichEditDocumentServer instance
-        using RichEditDocumentServer documentServer = new RichEditDocumentServer();
+        _webHostEnvironment = webHostEnvironment;
+    }
 
-        // Generate the content based on the variable name
-        if (variableName.ToLower() == "table")
+    [HttpPost("CalculateDocumentVariable")]
+    public async Task<IActionResult> CalculateDocumentVariable([FromForm] string variableName, [FromForm] List<string>? arguments)
+    {
+        var rtfContent = variableName switch
         {
-            // Access the document
-            Document document = documentServer.Document;
+            "ComplexTable" => GenerateComplexTable(),
+            "TableWithImages" => await GenerateTableWithImages(),
+            "FormattedText" => GenerateFormattedText(),
+            "CTable" => GenerateCTable(arguments ?? []),
+            _ => Base64Encode(@"{\rtf1\ansi\deff0{\fonttbl{\f0\fnil\fcharset0 Calibri;}}\f0\fs22 Unknown Variable}")
+        };
 
-            // Insert a table at the start of the document
-            Table table = document.Tables.Create(document.Range.Start, 3, 4);
+        // Return the RTF content in base64
+        return Content(rtfContent, "text/plain");
+    }
 
-            // Populate the table cells
-            for (int rowIndex = 0; rowIndex < table.Rows.Count; rowIndex++)
+    private string GenerateCTable(List<string> arguments)
+    {
+        using var documentServer = new RichEditDocumentServer();
+
+        var document = documentServer.Document;
+
+        var scenarioValue = arguments.FirstOrDefault();
+
+        var scenario = 0;
+        if (!string.IsNullOrEmpty(scenarioValue))
+            int.TryParse(scenarioValue, out scenario);
+
+        List<Action<Document>> scenarios =
+        [
+            TableActions.CreateTable, //0
+            TableActions.CreateFixedTable,
+            TableActions.ChangeTableColor, //2
+            TableActions.CreateAndApplyTableStyle,
+            TableActions.ChangeColumnAppearance, //4
+            TableActions.UseTableCellProcessor,
+            TableActions.MergeCells, //6
+            TableActions.SplitCells,
+            GenerateCustomerTableWithLogo //8
+        ];
+
+        scenario = Math.Min(Math.Max(scenario, 0), scenarios.Count - 1);
+
+        var scenarioAction = scenarios.ElementAtOrDefault(scenario) ?? scenarios[0];
+
+        scenarioAction(document);
+
+        // Get the RTF content
+        return ToRtfBase64(documentServer);
+    }
+
+    private void GenerateCustomerTableWithLogo(Document document)
+    {
+        var table = document.Tables.Create(document.Range.Start, 2, 4);
+
+        document.InsertSingleLineText(table.Rows[0].Cells[0].Range.Start, "ID");
+        document.InsertSingleLineText(table.Rows[0].Cells[1].Range.Start, "Photo");
+        document.InsertSingleLineText(table.Rows[0].Cells[2].Range.Start, "Customer Info");
+        document.InsertSingleLineText(table.Rows[0].Cells[3].Range.Start, "Rentals");
+
+        for (var i = 1; i < 2; i++)
+        {
+            document.InsertSingleLineText(table.Rows[i].Cells[0].Range.Start, $"ID {i}");
+
+            var customerInfo = $"Customer Info {i}\n" +
+                               $"Address: 123 Main St, Apt {i}\n" +
+                               $"Phone: (555) 123-456{i}\n" +
+                               $"Email: customer{i}@example.com";
+            document.InsertText(table.Rows[i].Cells[2].Range.Start, customerInfo);
+
+            var rentalsInfo = $"Rental {i}\n" +
+                              $"Date: 01/01/202{i}\n" +
+                              $"Amount: ${100 * i}\n" +
+                              $"Status: Active";
+            document.InsertText(table.Rows[i].Cells[3].Range.Start, rentalsInfo);
+        }
+
+        for (var i = 1; i < 2; i++)
+        {
+            var imagePath = Path.Combine(_webHostEnvironment.ContentRootPath, "Documents", "logo.png");
+            if (System.IO.File.Exists(imagePath))
             {
-                TableRow row = table.Rows[rowIndex];
-                for (int colIndex = 0; colIndex < row.Cells.Count; colIndex++)
-                {
-                    TableCell cell = row.Cells[colIndex];
-                    SubDocument cellSubDoc = cell.Range.BeginUpdateDocument();
-                    cellSubDoc.InsertText(cellSubDoc.CreatePosition(cellSubDoc.Range.End.ToInt()), $"{variableName} {rowIndex + 1},{colIndex + 1}");
-                    cell.Range.EndUpdateDocument(cellSubDoc);
-                }
+                using var imageStream = new FileStream(imagePath, FileMode.Open);
+
+                var documentImageSource = DocumentImageSource.FromStream(imageStream);
+                document.Images.Insert(table.Rows[i].Cells[1].Range.Start, documentImageSource);
             }
-
-            // Get the RTF content of the document
-            string rtfContent = documentServer.RtfText;//document.GetRtfText(document.);
-
-            // Return the RTF content
-            return Content(Base64Encode(rtfContent), "text/plain");
         }
-
-        // Handle other variables or return empty content
-        return Content(string.Empty, "text/plain");*/
-        var rtfContent = string.Empty;
-
-        switch (variableName)
-        {
-            case "ComplexTable":
-                rtfContent = GenerateComplexTable();
-                break;
-            case "TableWithImages":
-                rtfContent = GenerateTableWithImages();
-                break;
-            case "FormattedText":
-                rtfContent = GenerateFormattedText();
-                break;
-            default:
-                // Handle other variables or return empty content
-                rtfContent = @"{\rtf1\ansi\deff0{\fonttbl{\f0\fnil\fcharset0 Calibri;}}\f0\fs22 Unknown Variable}";
-                break;
-        }
-
-        // Return the RTF content with appropriate content type
-        return Content(Base64Encode(rtfContent), "text/plain");
     }
 
     private string GenerateFormattedText()
@@ -113,7 +148,7 @@ public class DocVarController : ControllerBase
         return ToRtfBase64(documentServer);
     }
 
-    private string GenerateTableWithImages()
+    private async Task<string> GenerateTableWithImages()
     {
         using var documentServer = new RichEditDocumentServer();
         var document = documentServer.Document;
@@ -128,27 +163,18 @@ public class DocVarController : ControllerBase
             var cellSubDoc = cell.Range.BeginUpdateDocument();
 
             // Load an image from a file or resource
-            using (var imageStream = GetImageStream())
+            await using (var imageStream = await DownloadImageStreamAsync())
             {
-                // Insert the image at the end of the cell's subdocument
-                var image = cellSubDoc.Images.Insert(
-                    cellSubDoc.CreatePosition(cellSubDoc.Range.End.ToInt()),
-                    DocumentImageSource.FromStream(imageStream));
-
+                // Insert the image 
+                document.Images.Insert(table.Rows[colIndex].Cells[1].Range.Start, DocumentImageSource.FromStream(imageStream));
                 // Optionally, scale the image
-                image.ScaleX = 50; // Scale to 50% of the original size
-                image.ScaleY = 50;
+                //image.ScaleX = 50; // Scale to 50% of the original size
+                //image.ScaleY = 50;
+
+
+                document.InsertText(table.Rows[colIndex].Cells[0].Range.Start, $"Caption {colIndex + 1}");
             }
 
-            cell.Range.EndUpdateDocument(cellSubDoc);
-        }
-
-        // Insert text into the second row
-        for (var colIndex = 0; colIndex < 2; colIndex++)
-        {
-            var cell = table[1, colIndex];
-            var cellSubDoc = cell.Range.BeginUpdateDocument();
-            cellSubDoc.InsertText(cellSubDoc.CreatePosition(cellSubDoc.Range.End.ToInt()), $"Caption {colIndex + 1}");
             cell.Range.EndUpdateDocument(cellSubDoc);
         }
 
@@ -173,6 +199,23 @@ public class DocVarController : ControllerBase
         bitmap.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
         ms.Position = 0;
         return ms;
+    }
+
+    public static async Task<Stream> DownloadImageStreamAsync()
+    {
+        const string url = "https://picsum.photos/100/100";
+        using var client = new HttpClient();
+
+        // Download the image data as a byte array
+        var imageData = await client.GetByteArrayAsync(url);
+
+        // Create a MemoryStream from the image data
+        var imageStream = new MemoryStream(imageData);
+
+        // Set the stream position to the beginning
+        imageStream.Position = 0;
+
+        return imageStream;
     }
 
     private string GenerateComplexTable()
@@ -218,10 +261,10 @@ public class DocVarController : ControllerBase
 
     public string ToRtfBase64(RichEditDocumentServer documentServer)
     {
-        using MemoryStream rtfStream = new MemoryStream();
+        using var rtfStream = new MemoryStream();
         documentServer.SaveDocument(rtfStream, DocumentFormat.Rtf);
         rtfStream.Position = 0;
-        using StreamReader reader = new StreamReader(rtfStream);
+        using var reader = new StreamReader(rtfStream);
         var rtfContent = reader.ReadToEnd();
 
         return Base64Encode(rtfContent);
@@ -230,6 +273,6 @@ public class DocVarController : ControllerBase
     public static string Base64Encode(string plainText)
     {
         var plainTextBytes = System.Text.Encoding.UTF8.GetBytes(plainText);
-        return System.Convert.ToBase64String(plainTextBytes);
+        return Convert.ToBase64String(plainTextBytes);
     }
 }

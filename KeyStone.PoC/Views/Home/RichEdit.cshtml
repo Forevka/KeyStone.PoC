@@ -11,7 +11,7 @@
             console.log('start processing ' + variableData.variableName);
 
             var variableName = variableData.variableName;
-            var args = variableData.arguments;
+            var args = variableData.args;
             $.ajax({
                 type: "POST",
                 url: '/api/DocVar/CalculateDocumentVariable',
