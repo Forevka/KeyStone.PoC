@@ -19,8 +19,9 @@
                 success: function (result) {
                     //e.value = result;
                     console.log(result)
+
                     const d = s.createDocumentProcessor();
-                    d.importDocument(result/*is in base 64*/, DevExpress.RichEdit.DocumentFormat.Rtf, (importSuccess) => {
+                    d.importDocument(result/*is in base 64*/, DevExpress.RichEdit.DocumentFormat.OpenXml, (importSuccess) => {
                         console.log('success', importSuccess)
                         console.log('result', result)
 

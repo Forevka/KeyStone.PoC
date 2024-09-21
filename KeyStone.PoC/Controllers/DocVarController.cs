@@ -19,22 +19,25 @@ public class DocVarController : ControllerBase
     [HttpPost("CalculateDocumentVariable")]
     public async Task<IActionResult> CalculateDocumentVariable([FromForm] string variableName, [FromForm] List<string>? arguments)
     {
-        var rtfContent = variableName switch
+        var document = variableName switch
         {
             "ComplexTable" => GenerateComplexTable(),
             "TableWithImages" => await GenerateTableWithImages(),
             "FormattedText" => GenerateFormattedText(),
             "CTable" => GenerateCTable(arguments ?? []),
-            _ => Base64Encode(@"{\rtf1\ansi\deff0{\fonttbl{\f0\fnil\fcharset0 Calibri;}}\f0\fs22 Unknown Variable}")
+            _ => GenerateComplexTable(),
         };
 
-        // Return the RTF content in base64
-        return Content(rtfContent, "text/plain");
+        using var docxStream = new MemoryStream();
+        document.SaveDocument(docxStream, DocumentFormat.OpenXml);
+
+        var base64Content = Convert.ToBase64String(docxStream.ToArray());
+        return Content(base64Content, "text/plain");
     }
 
-    private string GenerateCTable(List<string> arguments)
+    private RichEditDocumentServer GenerateCTable(List<string> arguments)
     {
-        using var documentServer = new RichEditDocumentServer();
+        var documentServer = new RichEditDocumentServer();
 
         var document = documentServer.Document;
 
@@ -63,8 +66,7 @@ public class DocVarController : ControllerBase
 
         scenarioAction(document);
 
-        // Get the RTF content
-        return ToRtfBase64(documentServer);
+        return documentServer;
     }
 
     private void GenerateCustomerTableWithLogo(Document document)
@@ -104,11 +106,13 @@ public class DocVarController : ControllerBase
                 document.Images.Insert(table.Rows[i].Cells[1].Range.Start, documentImageSource);
             }
         }
+
+        //document.SaveDocument(Path.Combine(_webHostEnvironment.ContentRootPath, "Documents", "GenerateCustomerTableWithLogo.docx"), DocumentFormat.OpenXml);
     }
 
-    private string GenerateFormattedText()
+    private RichEditDocumentServer GenerateFormattedText()
     {
-        using var documentServer = new RichEditDocumentServer();
+        var documentServer = new RichEditDocumentServer();
 
         var document = documentServer.Document;
 
@@ -144,13 +148,12 @@ public class DocVarController : ControllerBase
         underlineProps.Underline = UnderlineType.Single;
         document.EndUpdateCharacters(underlineProps);
 
-        // Get the RTF content
-        return ToRtfBase64(documentServer);
+        return documentServer;
     }
 
-    private async Task<string> GenerateTableWithImages()
+    private async Task<RichEditDocumentServer> GenerateTableWithImages()
     {
-        using var documentServer = new RichEditDocumentServer();
+        var documentServer = new RichEditDocumentServer();
         var document = documentServer.Document;
 
         // Create a table
@@ -178,8 +181,7 @@ public class DocVarController : ControllerBase
             cell.Range.EndUpdateDocument(cellSubDoc);
         }
 
-        // **Save the entire document to RTF**
-        return ToRtfBase64(documentServer);
+        return documentServer;
     }
 
     // Helper method to get image stream
@@ -218,10 +220,11 @@ public class DocVarController : ControllerBase
         return imageStream;
     }
 
-    private string GenerateComplexTable()
+    private RichEditDocumentServer GenerateComplexTable()
     {
-        using var documentServer = new RichEditDocumentServer();
-        var document = documentServer.Document;
+        var documentServer = new RichEditDocumentServer();
+
+        var document = documentServer.Document;// as DevExpress.XtraRichEdit.API.Native.Implementation.NativeDocument;
 
         // Create a table with 4 rows and 4 columns
         var table = document.Tables.Create(document.Range.End, 4, 4);
@@ -255,24 +258,6 @@ public class DocVarController : ControllerBase
         // Merge some cells as an example
         table.MergeCells(table[0, 0], table[1, 1]);
 
-        // **Save the entire document to RTF**
-        return ToRtfBase64(documentServer);
-    }
-
-    public string ToRtfBase64(RichEditDocumentServer documentServer)
-    {
-        using var rtfStream = new MemoryStream();
-        documentServer.SaveDocument(rtfStream, DocumentFormat.Rtf);
-        rtfStream.Position = 0;
-        using var reader = new StreamReader(rtfStream);
-        var rtfContent = reader.ReadToEnd();
-
-        return Base64Encode(rtfContent);
-    }
-
-    public static string Base64Encode(string plainText)
-    {
-        var plainTextBytes = System.Text.Encoding.UTF8.GetBytes(plainText);
-        return Convert.ToBase64String(plainTextBytes);
+        return documentServer;
     }
 }
